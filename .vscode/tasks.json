@@ -1,0 +1,58 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/GTAdhocToolchain.slnx",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary;ForceNoAlign"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "publish: macOS CLI",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "echo 'This task only runs on macOS.' 1>&2; exit 1"
+            ],
+            "osx": {
+                "command": "bash",
+                "args": [
+                    "-c",
+                    "ARCH=\"$(uname -m)\"; case \"$ARCH\" in arm64) RID=osx-arm64 ;; x86_64) RID=osx-x64 ;; *) echo \"Unsupported architecture: $ARCH\" 1>&2; exit 1 ;; esac; dotnet publish '${workspaceFolder}/GTAdhocToolchain.CLI/GTAdhocToolchain.CLI.csproj' -c Release -r \"$RID\" --self-contained -o \"${workspaceFolder}/publish/$RID\""
+                ]
+            },
+            "group": "build",
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "link: adhoc → ~/.local/bin",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-c",
+                "echo 'This task only runs on macOS.' 1>&2; exit 1"
+            ],
+            "osx": {
+                "command": "bash",
+                "args": [
+                    "-c",
+                    "ARCH=\"$(uname -m)\"; case \"$ARCH\" in arm64) RID=osx-arm64 ;; x86_64) RID=osx-x64 ;; *) echo \"Unsupported architecture: $ARCH\" 1>&2; exit 1 ;; esac; ln -sf \"${workspaceFolder}/publish/$RID/adhoc\" \"$HOME/.local/bin/adhoc\""
+                ]
+            },
+            "dependsOn": "publish: macOS CLI",
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

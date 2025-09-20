@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "inputs": [
+        {
+            "id": "unpackedProjectGpb",
+            "type": "promptString",
+            "description": "Path to the .gpb file to unpack/debug"
+        }
+    ],
+    "configurations": [
+        {
+            "name": "Adhoc GPB Unpack Debug (console)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/GTAdhocToolchain.CLI/bin/Debug/net10.0/adhoc.dll",
+            "env": {
+                "UNPACKED_PROJECT_GPB": "${input:unpackedProjectGpb}"
+            },
+            "args": [
+                "unpack",
+                "-i",
+                "${input:unpackedProjectGpb}"
+            ],
+            "cwd": "${workspaceFolder}/GTAdhocToolchain.CLI",
+            // For more information about the 'console' field, see https://aka.ms/VSCode-CS-LaunchJson-Console
+            "console": "internalConsole",
+            "stopAtEntry": false,
+        },
+    ]
+}
