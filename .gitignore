@@ -367,3 +367,6 @@ launchSettings.json
 
 # Adhoc comparison output
 /scripts/comparison.html
+
+# macOS
+.DS_Store
