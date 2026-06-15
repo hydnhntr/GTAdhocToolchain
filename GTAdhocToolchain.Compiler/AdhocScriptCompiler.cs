@@ -383,6 +383,9 @@ public class AdhocScriptCompiler
             case Nodes.PragmaPopStrictStatement:
                 CompilePragmaPopStrictStatement(node.As<PragmaPopStrictStatement>());
                 break;
+            case Nodes.PragmaIncludeStatement:
+                CompilePragmaIncludeStatement(node.As<PragmaIncludeStatement>());
+                break;
 
             default:
                 ThrowCompilationError(node, $"Unsupported statement: {node.Type}");
@@ -607,47 +610,57 @@ public class AdhocScriptCompiler
 
     public void CompileIncludeStatement(IncludeStatement include)
     {
+        CompileInclude(include, include.Path);
+    }
+
+    // Ours is not accurate, but GT7 1.00's handler is at 30603B0 (hParser::ProcessPragmaIncludeForFile), for pragmas
+    private void CompileInclude(Node node, string path)
+    {
         if (string.IsNullOrEmpty(BaseIncludeFolder))
             BaseIncludeFolder = Path.GetDirectoryName(CurrentFrame.SourceFilePath.Name);
 
         // Look for the file relative to the provided include path
-        string pathToIncludeFile = Path.Combine(BaseIncludeFolder, include.Path);
+        string pathToIncludeFile = Path.Combine(BaseIncludeFolder, path);
         if (!File.Exists(pathToIncludeFile))
         {
             // Try project folder
             if (!string.IsNullOrEmpty(ProjectDirectory))
             {
-                pathToIncludeFile = Path.Combine(ProjectDirectory, include.Path);
+                pathToIncludeFile = Path.Combine(ProjectDirectory, path);
                 if (!File.Exists(pathToIncludeFile))
-                    ThrowCompilationError(include, $"Include file does not exist: '{pathToIncludeFile}'");
+                    ThrowCompilationError(node, $"Include file does not exist: '{pathToIncludeFile}'");
             }
             else
-                ThrowCompilationError(include, $"Include file does not exist: '{include.Path}'");
+                ThrowCompilationError(node, $"Include file does not exist: '{path}'");
         }
 
 
-        Logger.Info($"Linking include file '{include.Path}' for '{CurrentFrame.SourceFilePath.Name}'.");
+        Logger.Info($"Linking include file '{path}' for '{CurrentFrame.SourceFilePath.Name}'.");
 
         string file = File.ReadAllText(pathToIncludeFile);
 
         var parser = new AdhocAbstractSyntaxTree(file);
-        parser.SetFileName(include.Path);
+        parser.SetFileName(path);
         Script includeScript = parser.ParseScript();
 
         // Set frame file name to our include file's
         string oldPath = CurrentFrame.SourceFilePath.Name;
-        CurrentFrame.SetSourcePath(SymbolMap.RegisterSymbol(include.Path));
+        CurrentFrame.SetSourcePath(SymbolMap.RegisterSymbol(path));
 
-        // Alert interpreter that the current source file has changed for debugging
-        InsSourceFile srcFileIns = new InsSourceFile(SymbolMap.RegisterSymbol(include.Path, false));
-        AddInstruction(srcFileIns, include.Location);
+        PushStrict(false);
+        {
+            // Alert interpreter that the current source file has changed for debugging
+            InsSourceFile srcFileIns = new InsSourceFile(SymbolMap.RegisterSymbol(path, false));
+            AddInstruction(srcFileIns, node.Location);
 
-        // Copy include into current frame
-        CompileScriptBody(includeScript);
+            // Copy include into current frame
+            CompileScriptBody(includeScript);
 
-        // Resume
-        InsSourceFile ogSrcFileIns = new InsSourceFile(CurrentFrame.SourceFilePath);
-        AddInstruction(ogSrcFileIns, include.Location);
+            // Resume
+            InsSourceFile ogSrcFileIns = new InsSourceFile(CurrentFrame.SourceFilePath);
+            AddInstruction(ogSrcFileIns, node.Location);
+        }
+        PopStrict();
 
         CurrentFrame.SetSourcePath(SymbolMap.RegisterSymbol(oldPath));
     }
@@ -3061,7 +3074,7 @@ public class AdhocScriptCompiler
             }
             else if (binExp.Operator == BinaryOperator.NullishCoalescing)
             {
-                if (CurrentFrame.Version.IsMinimumVersionForOptionalSupport())
+                if (!CurrentFrame.Version.IsMinimumVersionForOptionalSupport())
                     ThrowCompilationError(binExp, CompilationMessages.Error_NullCoalescingUnsupported);
                 else
                     AddPostCompilationWarning(CompilationMessages.Warning_UsingOptional_Code);
@@ -3565,6 +3578,11 @@ public class AdhocScriptCompiler
             PrintCompilationWarning(statement, "Strict stack at top level.");
 
         PopStrict();
+    }
+
+    private void CompilePragmaIncludeStatement(PragmaIncludeStatement statement)
+    {
+        CompileInclude(statement, statement.Path);
     }
 
     #endregion
@@ -4546,7 +4564,7 @@ public class AdhocScriptCompiler
         CurrentModuleOrClassScope.Variables.Remove(symbol);
     }
 
-    private bool IsDeclarationType(AdhocVariableType variableType)
+    private static bool IsDeclarationType(AdhocVariableType variableType)
     {
         return variableType <= AdhocVariableType.Static;
     }
