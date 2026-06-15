@@ -85,13 +85,13 @@ public static class Utils
         };
     }
 
-    public static string Read7BitString(this BinaryStream sr)
+    public static string Read7BitString(this AdhocStream sr)
     {
         ulong strLen = DecodeBitsAndAdvance(sr);
         return Encoding.UTF8.GetString(sr.ReadBytes((int)strLen));
     }
 
-    public static byte[] Read7BitStringBytes(this BinaryStream sr)
+    public static byte[] Read7BitStringBytes(this AdhocStream sr)
     {
         ulong strLen = DecodeBitsAndAdvance(sr);
         return sr.ReadBytes((int)strLen);
@@ -147,7 +147,7 @@ public static class Utils
         bs.Write(bytes);
     }
 
-    public static ulong DecodeBitsAndAdvance(this BinaryStream sr)
+    public static ulong DecodeBitsAndAdvance(this AdhocStream sr)
     {
         ulong value = (ulong)sr.ReadByte();
         ulong mask = 0x80;

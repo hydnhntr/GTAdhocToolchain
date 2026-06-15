@@ -21,7 +21,7 @@ public class MBinaryWriter : IDisposable
 
     public bool Debug { get; set; }
 
-    public BinaryStream Stream { get; set; }
+    public AdhocStream Stream { get; set; }
 
     public int Version { get; set; }
 
@@ -33,7 +33,7 @@ public class MBinaryWriter : IDisposable
     public void WriteNode(mNode node)
     {
         using var fs = new FileStream(OutputFileName, FileMode.Create);
-        Stream = new BinaryStream(fs, ByteConverter.Big);
+        Stream = new AdhocStream(fs, new AdhocVersion(1)) { BigEndian = true };
 
         Stream.WriteString("MPRJ", StringCoding.Raw);
         Stream.WriteVarInt((int)Version);

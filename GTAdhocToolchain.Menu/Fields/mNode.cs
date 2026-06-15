@@ -26,7 +26,7 @@ public class mNode : mTypeBase
     public bool IsRoot { get; set; }
 
     public static HashSet<string> mStrings = [];
-
+    public static SortedSet<string> mStrings2 = new SortedSet<string>();
 
     public override void Read(MBinaryIO io)
     {
@@ -89,7 +89,7 @@ public class mNode : mTypeBase
             var terminator = io.Stream.ReadInt16();
             Debug.Assert(terminator == 0x18d, "Scope terminator did not match");
         }
-        else if (io.Version == 1)
+        else if (io.Version >= 1)
         {
             TypeName = io.Stream.Read7BitString();
 
@@ -112,6 +112,11 @@ public class mNode : mTypeBase
                 {
                     io.CurrentKeyName = str.String;
                     field = io.ReadNext();
+
+                    if (field is mString)
+                    {
+                        mStrings2.Add((field as mString).String);
+                    }
 
                     // Grab roots
                     if (TypeName == "RootWindow" && field is mString @string && @string.String is not null)

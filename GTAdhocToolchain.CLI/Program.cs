@@ -147,10 +147,25 @@ public class Program
 
                 foreach (var adc in scripts)
                 {
-                    adc.Disassemble(Path.ChangeExtension(file, ".ad.diss"));
+                    if (adc.Version >= 13)
+                    {
+                        string fileName = adc.TopLevelFrame.SourceFilePath.Name;
+                        string? dir = Path.GetDirectoryName(file);
+                        if (string.IsNullOrWhiteSpace(dir))
+                            dir = Path.GetFileNameWithoutExtension(fileName);
 
-                    if (adc.Version == 12)
-                        adc.PrintStrings(Path.ChangeExtension(file, ".strings"));
+                        string outputDir = Path.Combine(dir, fileName.TrimStart('/'));
+                        Directory.CreateDirectory(Path.GetDirectoryName(outputDir));
+
+                        adc.Disassemble(outputDir + ".diss", asCompareMode: false);
+                    }
+                    else
+                    {
+                        adc.Disassemble(Path.ChangeExtension(file, ".ad.diss"), asCompareMode: false);
+
+                        if (adc.Version == 12)
+                            adc.PrintStrings(Path.ChangeExtension(file, ".strings"));
+                    }
                 }
             }
             else if (file.ToLower().EndsWith(".gpb"))
@@ -421,7 +436,7 @@ public class Program
 
         try
         {
-            string? absoluteIncludePath = Path.GetDirectoryName(inputPath);
+            string? absoluteIncludePath = Path.GetDirectoryName(Path.GetFullPath(inputPath));
             if (string.IsNullOrWhiteSpace(absoluteIncludePath))
             {
                 Logger.Error("Could not determine base directory of input file?");

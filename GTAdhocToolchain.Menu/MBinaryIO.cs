@@ -1,26 +1,28 @@
 ﻿// Copyright (c) 2026 Nenkai
 // SPDX-License-Identifier: MIT
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.IO;
+using GTAdhocToolchain.Core;
+using GTAdhocToolchain.Menu.Fields;
 
-using Syroot.BinaryData.Core;
 using Syroot.BinaryData;
+using Syroot.BinaryData.Core;
 using Syroot.BinaryData.Memory;
 
-using GTAdhocToolchain.Menu.Fields;
-using GTAdhocToolchain.Core;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace GTAdhocToolchain.Menu;
 
 public class MBinaryIO
 {
     public string FileName { get; set; }
-    public BinaryStream Stream { get; set; }
+    public AdhocStream Stream { get; set; } // Fine to reuse
     public byte Version { get; set; }
 
     public string? CurrentKeyName { get; set; }
@@ -33,7 +35,7 @@ public class MBinaryIO
     public mNode? Read()
     {
         using var file = File.Open(FileName, FileMode.Open);
-        Stream = new BinaryStream(file, ByteConverter.Big);
+        Stream = new AdhocStream(file, new AdhocVersion(1)) { BigEndian = true };
 
         string magic = Stream.ReadString(4);
         if (magic == "Proj")
@@ -49,19 +51,38 @@ public class MBinaryIO
 
         
         Version = (byte)Stream.DecodeBitsAndAdvance();
-        if (Version != 0 && Version != 1)
+        if (Version > 2)
         {
             Console.WriteLine($"Unsupported MPRJ Version {Version}.");
             return null;
         }
 
+        if (Version >= 2)
+        {
+            byte[] md5Hash = Stream.ReadBytes(0x10);
+
+            // Check MD5
+            byte[] fileBytes = new byte[Stream.Length - Stream.Position];
+
+            long tempPos = Stream.Position;
+            Stream.ReadExactly(fileBytes);
+            Stream.Position = tempPos;
+
+            Stream.InitScrambler(md5Hash);
+            Stream.ChachaScramblerState.DecryptBytes(fileBytes, fileBytes.Length, 0);
+            if (!MD5.HashData(fileBytes).AsSpan().SequenceEqual(md5Hash))
+                Console.WriteLine("Warning: mproject md5 hash did not match expected");
+        }
+
         var rootPrjNode = new mNode();
         rootPrjNode.IsRoot = true; // For version 0
-        if (Version == 1)
+        if (Version >= 1)
             Stream.Position += 1; // Skip scope type
 
         Console.WriteLine($"MPRJ Version: {Version}");
         rootPrjNode.Read(this);
+
+        Debug.Assert(Stream.Position == Stream.Length);
 
         Stream.Dispose();
 
@@ -124,6 +145,72 @@ public class MBinaryIO
             field!.Read(this);
 
         return field;
+    }
+
+    public void PrintRootsGT7()
+    {
+        using StreamWriter sw = new StreamWriter("gpbs.txt");
+
+        foreach (var r in Directory.GetDirectories(FileName))
+        {
+            string projName = Path.GetFileNameWithoutExtension(r);
+            string projProj = Path.Combine(r, projName) + ".mproject";
+
+            if (!File.Exists(projProj))
+                continue;
+
+            using var file = File.Open(projProj, FileMode.Open);
+            Stream = new AdhocStream(file, new AdhocVersion(2)) { BigEndian = true };
+
+            string magic = Stream.ReadString(4);
+            if (magic != "MPRJ")
+            {
+                Console.WriteLine($"${projProj}: Not a MPRJ Binary file.");
+                continue;
+            }
+
+            Version = (byte)Stream.DecodeBitsAndAdvance();
+            if (Version > 2)
+            {
+                Console.WriteLine($"{projProj}: Unsupported MPRJ Version {Version}.");
+                continue;
+            }
+
+            if (Version >= 2)
+            {
+                byte[] md5Hash = Stream.ReadBytes(0x10);
+                Stream.InitScrambler(md5Hash);
+            }
+
+            var rootPrjNode = new mNode();
+            rootPrjNode.IsRoot = true; // For version 0
+            if (Version == 1)
+                Stream.Position += 1; // Skip scope type
+
+            rootPrjNode.Read(this);
+
+            Stream.Dispose();
+
+            sw.WriteLine($"// Project: {projName}");
+            foreach (var m in mNode.mStrings)
+            {
+                sw.WriteLine($"projects/gt7/{projName}/gpb/{m}_4k.gpb");
+                sw.WriteLine($"projects/gt7/{projName}/gpb/{m}.gpb");
+            }
+            sw.WriteLine();
+
+            mNode.mStrings.Clear();
+        }
+
+        /*
+        using StreamWriter sw2 = new StreamWriter("strings.txt");
+        foreach (var m in mNode.mStrings2.Distinct().OrderBy(e => e))
+        {
+            sw2.WriteLine(m);
+        }
+        */
+
+        Console.WriteLine("Done.");
     }
 }
 

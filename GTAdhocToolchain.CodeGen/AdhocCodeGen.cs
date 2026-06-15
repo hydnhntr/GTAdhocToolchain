@@ -12,6 +12,8 @@ using Syroot.BinaryData;
 using GTAdhocToolchain.Core.Instructions;
 using GTAdhocToolchain.Core;
 
+using PDTools.Crypto;
+
 namespace GTAdhocToolchain.CodeGen;
 
 public class AdhocCodeGen
@@ -38,10 +40,47 @@ public class AdhocCodeGen
         // ADhoc Compiled Header?
         stream.WriteString($"ADCH{Frame.Version.VersionNumber:D3}", StringCoding.ZeroTerminated); // ADCH012
 
+        if (Frame.Version.HasChecksums())
+        {
+            // Start MD5 here
+            stream.Position += 0x10; // Skip MD5 for now
+
+            stream.WriteVarInt(SymbolMap.Symbols.Count);
+
+            stream.StartCurrentScriptMD5();
+            stream.StartCompiledFileMD5();
+            stream.WriteVarInt(1); // Script count
+        }
+
         if (Frame.Version.HasSymbolTable())
             SerializeSymbolTable();
 
         Frame.Write(stream);
+
+        if (Frame.Version.HasChecksums())
+        {
+            var scriptHash = stream.FinishCurrentScriptMD5();
+            stream.Write(scriptHash);
+
+            var fullFileHash = stream.FinishCompiledFileMD5();
+            stream.Position = 0x08;
+            stream.Write(fullFileHash);
+
+            if (Frame.Version.IsEncrypted())
+            {
+                // Encrypt
+                byte[] encBuffer = new byte[stream.Length - stream.Position];
+                stream.ReadExactly(encBuffer);
+
+                ChaCha20 state = ScramblerState.CreateFromHash(fullFileHash);
+                state.DecryptBytes(encBuffer, encBuffer.Length);
+
+                stream.Position = 0x18;
+                stream.Write(encBuffer);
+            }
+
+            stream.Position = stream.Length;
+        }
 
         Logger.Info($"Code generated (Size: {stream.Length} bytes, {Frame.Instructions.Count} main instructions)");
         Logger.Debug($"[Stack] Stack Size: {Frame.MaxStackSize} - Locals: {Frame.LocalCount}");

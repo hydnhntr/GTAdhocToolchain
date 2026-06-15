@@ -76,16 +76,24 @@ public class AdhocCodeFrame
 
     public void Write(AdhocStream stream)
     {
-        if (Version.VersionNumber >= 8 && Version.VersionNumber <= 12)
+        if (Version.VersionNumber >= 13)
         {
-            stream.WriteBoolean(HasDebuggingInformation);
-            stream.WriteByte((byte)Version.VersionNumber);
+            stream.WriteSymbol(SourceFilePath);
+            stream.WriteByte(0);
         }
+        else
+        {
+            if (Version.VersionNumber >= 8 && Version.VersionNumber <= 12)
+            {
+                stream.WriteBoolean(HasDebuggingInformation);
+                stream.WriteByte((byte)Version.VersionNumber);
+            }
 
-        stream.WriteSymbol(SourceFilePath);
+            stream.WriteSymbol(SourceFilePath);
 
-        if (Version.SupportsRestElement())
-            stream.WriteBoolean(HasRestElement); // Not sure for Version 14
+            if (Version.SupportsRestElement())
+                stream.WriteBoolean(HasRestElement); // Not sure for Version 14
+        }
 
         if (Version.VersionNumber > 3)
         {
@@ -154,18 +162,28 @@ public class AdhocCodeFrame
         else
         {
 
-            HasDebuggingInformation = stream.ReadBoolean();
-            Version = new AdhocVersion((uint)stream.ReadByte());
-
-            if (Version.VersionNumber != 8) // Why PDI? Changed your mind after 8?
+            if (Version.VersionNumber >= 13)
             {
-                if (HasDebuggingInformation)
-                    SourceFilePath = stream.ReadSymbol();
+                HasDebuggingInformation = true;
+
+                SourceFilePath = stream.ReadSymbol();
+                stream.ReadByte();
             }
+            else
+            {
+                HasDebuggingInformation = stream.ReadBoolean();
+                byte version = stream.Read1Byte();
 
 
-            if (Version.SupportsRestElement())
-                HasRestElement = stream.ReadBoolean();
+                if (Version.VersionNumber != 8) // Why PDI? Changed your mind after 8?
+                {
+                    if (HasDebuggingInformation)
+                        SourceFilePath = stream.ReadSymbol();
+                }
+
+                if (Version.VersionNumber >= 12)
+                    HasRestElement = stream.ReadBoolean();
+            }
 
             uint argCount = stream.ReadUInt32();
 

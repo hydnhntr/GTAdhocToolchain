@@ -18,7 +18,7 @@ public struct AdhocVersion
         VersionNumber = version;
     }
 
-    public readonly bool HasSymbolTable() => VersionNumber >= 9;
+    public readonly bool HasSymbolTable() => VersionNumber >= 9 && VersionNumber <= 12;
 
     public readonly bool HasReservedLocalInFrame() => VersionNumber <= 10;
 
@@ -303,5 +303,17 @@ public struct AdhocVersion
     /// Whether to use new stack with split locals and statics.
     /// </summary>
     /// <returns></returns>
-    public readonly bool UsesNewSplitStack() => VersionNumber >= 11; 
+    public readonly bool UsesNewSplitStack() => VersionNumber >= 11;
+
+    /// <summary>
+    /// GT7
+    /// </summary>
+    /// <returns></returns>
+    public readonly bool HasChecksums() => VersionNumber >= 13;
+
+    /// <summary>
+    /// GT7
+    /// </summary>
+    /// <returns></returns>
+    public readonly bool IsEncrypted() => VersionNumber >= 15;
 }
