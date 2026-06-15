@@ -2013,6 +2013,22 @@ foreach (var car in cars)
 [Core.Hooking] <Info> gt7_hooks.cpp:142 DumpSubroutine: SET_STATE: EXIT
 
 ////////////////////////////////////////////////////////////////////////
+// @link <path> { <statements> }
+////////////////////////////////////////////////////////////////////////
+@link "testt.ad" { test(); }
+@link "testt2.ad" { test(); }
+[Core.Hooking] <Info> gt7_hooks.cpp:105 DumpSubroutine: VARIABLE_EVAL: test,test, Local: 0
+[Core.Hooking] <Info> gt7_hooks.cpp:153 DumpSubroutine: CALL: 0 args
+[Core.Hooking] <Info> gt7_hooks.cpp:252 DumpSubroutine: POP
+[Core.Hooking] <Info> gt7_hooks.cpp:245 DumpSubroutine: LEAVE: Depth:0, RewindLocalsStorageTo:1
+[Core.Hooking] <Info> gt7_hooks.cpp:158 DumpSubroutine: SET_STATE: EXIT
+[Core.Hooking] <Info> gt7_hooks.cpp:105 DumpSubroutine: VARIABLE_EVAL: test,test, Local: 0
+[Core.Hooking] <Info> gt7_hooks.cpp:153 DumpSubroutine: CALL: 0 args
+[Core.Hooking] <Info> gt7_hooks.cpp:252 DumpSubroutine: POP
+[Core.Hooking] <Info> gt7_hooks.cpp:245 DumpSubroutine: LEAVE: Depth:0, RewindLocalsStorageTo:1
+[Core.Hooking] <Info> gt7_hooks.cpp:158 DumpSubroutine: SET_STATE: EXIT
+
+////////////////////////////////////////////////////////////////////////
 @push_strict <int or bool>
 ////////////////////////////////////////////////////////////////////////
 @push_strict 1
