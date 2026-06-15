@@ -1991,11 +1991,16 @@ foreach (var car in cars)
 [Core.Hooking] <Info> gt7_hooks.cpp:69 GT7Logger: FileSystemDirect::openStream: open failed. cannot stat. stream=0xe400d15f30 code=11 path=/test.ad remote_name=/test.ad
 [Core.Hooking] <Info> gt7_hooks.cpp:73 MException_MExceptionImpl: MException: gt7/boot/init_ecs.ad:158:0: [IOError] cannot open "/SYSTEM_ROOT/test.ad".
 
-////////////////////////////////////////////////////////////////////////
-// @include (expects adhoc source file)
-////////////////////////////////////////////////////////////////////////
-@exec "5 + 6"
-[Core.Hooking] <Info> gt7_hooks.cpp:73 MException_MExceptionImpl: MException: gt7/boot/init_ecs.ad:158:0: [SyntaxError] syntax error, unexpected tSTRING, expecting '{' (near token '5 + 6')
+// (with file in shadPS4/download/CUSA24767/APP_DATA/test.ad) with contents "test"
+@include "/APP_DATA/test.ad";
+[Core.Hooking] <Info> gt7_hooks.cpp:69 GT7Logger: FileSystemDirect::openStream: opening. stream=0xe400d15f30 path=/test.ad remote_name=/download0/APP_DATA//test.ad
+[Core.Hooking] <Info> gt7_hooks.cpp:69 GT7Logger: FileSystemDirect::openStream: open done. stream=0xe400d15f30 attr=PLAIN size=5 path=/test.ad remote_name=/download0/APP_DATA//test.ad
+[Core.Hooking] <Info> gt7_hooks.cpp:69 GT7Logger: FileSystemDirect::closeStream: dev->close(). stream=0xe400d15f30 fd=0x28 ret=0 path=/test.ad
+[Core.Hooking] <Info> gt7_hooks.cpp:252 DumpSubroutine: SOURCE_FILE
+[Core.Hooking] <Info> gt7_hooks.cpp:105 DumpSubroutine: VARIABLE_EVAL: test,test, Local: 0
+[Core.Hooking] <Info> gt7_hooks.cpp:252 DumpSubroutine: POP
+[Core.Hooking] <Info> gt7_hooks.cpp:252 DumpSubroutine: SOURCE_FILE
+[Core.Hooking] <Info> gt7_hooks.cpp:158 DumpSubroutine: SET_STATE: EXIT
 
 ////////////////////////////////////////////////////////////////////////
 // @exec <block> (curly brackets)
