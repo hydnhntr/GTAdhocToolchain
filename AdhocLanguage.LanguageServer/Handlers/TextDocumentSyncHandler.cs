@@ -1,19 +1,4 @@
-﻿using AdhocLanguage.LanguageServer.Services;
-
-using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Client.ClientCapabilities;
-using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Server;
-using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Server.Options;
-using EmmyLua.LanguageServer.Framework.Protocol.Message.TextDocument;
-using EmmyLua.LanguageServer.Framework.Protocol.Model.Diagnostic;
-using EmmyLua.LanguageServer.Framework.Protocol.Model.TextEdit;
-using EmmyLua.LanguageServer.Framework.Server.Handler;
-
-using Esprima;
-using Esprima.Ast;
-
-using GTAdhocToolchain.Analyzer;
-
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,34 +6,57 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AdhocLanguage.LanguageServer;
+using AdhocLanguage.LanguageServer.Services;
+
+using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Client.ClientCapabilities;
+using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Server;
+using EmmyLua.LanguageServer.Framework.Protocol.Capabilities.Server.Options;
+using EmmyLua.LanguageServer.Framework.Protocol.Message.TextDocument;
+using EmmyLua.LanguageServer.Framework.Protocol.Message.Client.PublishDiagnostics;
+using EmmyLua.LanguageServer.Framework.Protocol.Model.Diagnostic;
+using EmmyLua.LanguageServer.Framework.Protocol.Model.TextEdit;
+using EmmyLua.LanguageServer.Framework.Server.Handler;
+
+using LangServer = EmmyLua.LanguageServer.Framework.Server.LanguageServer;
+
+namespace AdhocLanguage.LanguageServer.Handlers;
 
 class TextDocumentSyncHandler : TextDocumentHandlerBase
 {
-    private readonly ServerContext _context;
+    private readonly LangServer _server;
+    private readonly AdhocDocumentService _documents;
 
-    public TextDocumentSyncHandler(ServerContext context)
+    public TextDocumentSyncHandler(LangServer langServer, AdhocDocumentService documents)
     {
-        _context = context;
+        _server = langServer;
+        _documents = documents;
     }
 
     public TextDocumentSyncKind Change { get; } = TextDocumentSyncKind.Full;
 
-    protected override Task Handle(DidOpenTextDocumentParams request, CancellationToken token)
+    protected override async Task Handle(DidOpenTextDocumentParams request, CancellationToken token)
     {
         Console.Error.WriteLine($"TextDocumentHandler: DidOpenTextDocumentParams {request.TextDocument.Uri}");
 
-        _context.Documents.ScanFile(request.TextDocument.Uri.FileSystemPath, request.TextDocument.Text, request.TextDocument.Version, force: true);
+        _documents.ScanFile(request.TextDocument.Uri.FileSystemPath, request.TextDocument.Text, request.TextDocument.Version, force: true);
         //PublishDiagnostics(uri, ast);
 
-        return Task.CompletedTask;
+        DocumentState? doc = _documents.GetDocument(request.TextDocument.Uri.FileSystemPath);
+        if (doc is not null)
+        {
+            await _server.Client.PublishDiagnostics(new PublishDiagnosticsParams()
+            {
+                Uri = request.TextDocument.Uri,
+                Diagnostics = doc.Diagnostics,
+            });
+        }
     }
 
     protected override Task Handle(DidChangeTextDocumentParams request, CancellationToken token)
     {
         var newText = request.ContentChanges.LastOrDefault()?.Text;
         if (newText is not null)
-            _context.Documents.ScanFile(request.TextDocument.Uri.FileSystemPath, newText, request.TextDocument.Version);
+            _documents.ScanFile(request.TextDocument.Uri.FileSystemPath, newText, request.TextDocument.Version);
         
         Console.Error.WriteLine($"TextDocumentHandler: DidChangeTextDocumentParams {request.TextDocument.Uri}");
         return Task.CompletedTask;
@@ -58,7 +66,7 @@ class TextDocumentSyncHandler : TextDocumentHandlerBase
     {
         Console.Error.WriteLine($"TextDocumentHandler: DidCloseTextDocument {request.TextDocument.Uri}");
 
-        _context.Documents.Remove(request.TextDocument.Uri.FileSystemPath);
+        _documents.Remove(request.TextDocument.Uri.FileSystemPath);
 
         return Task.CompletedTask;
     }
@@ -88,21 +96,3 @@ class TextDocumentSyncHandler : TextDocumentHandlerBase
     }
 }
 
-public class DocumentState
-{
-    public string Uri { get; set; }
-    public string Text { get; set; }
-    public AdhocAbstractSyntaxTree Ast { get; set; }
-    public AdhocScriptAnalyzer Analyser { get; set; }
-    public List<Diagnostic>? Diagnostics { get; set; }
-    public int Version { get; set; }
-
-    public DocumentState(string uri, string text, AdhocAbstractSyntaxTree ast, AdhocScriptAnalyzer analyser, int version)
-    {
-        Uri = uri;
-        Text = text;
-        Ast = ast;
-        Analyser = analyser;
-        Version = version;
-    }
-}

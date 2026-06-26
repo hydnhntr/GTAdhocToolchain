@@ -527,7 +527,8 @@ public class AdhocScriptAnalyzer
     {
         EnterScope(forStatement);
 
-        ParseStatement(forStatement.Init);
+        if (forStatement.Init is not null)
+            ParseStatement(forStatement.Init);
 
         if (forStatement.Test is not null)
             ParseStatement(forStatement.Test);

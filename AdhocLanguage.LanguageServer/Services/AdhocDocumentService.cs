@@ -1,4 +1,7 @@
-﻿using EmmyLua.LanguageServer.Framework.Protocol.Model.TextDocument;
+﻿using EmmyLua.LanguageServer.Framework.Protocol.Model.Diagnostic;
+using EmmyLua.LanguageServer.Framework.Protocol.Model.TextDocument;
+using EmmyLua.LanguageServer.Framework.Protocol.Model;
+using LSPPos = EmmyLua.LanguageServer.Framework.Protocol.Model.Position;
 
 using Esprima;
 using Esprima.Ast;
@@ -8,6 +11,7 @@ using GTAdhocToolchain.Analyzer;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Text;
 using System.Threading;
 
@@ -19,6 +23,7 @@ public class AdhocDocumentService
 
     public static DateTime LastParsed { get; set; }
     private static readonly Lock thisLock = new Lock();
+    private CollectingErrorHandler _errorHandler;
 
     public void ScanFile(string uri, string code, int version, bool force = false)
     {
@@ -30,19 +35,31 @@ public class AdhocDocumentService
 
         lock (thisLock)
         {
-            var errHandler = new CollectingErrorHandler();
+            _errorHandler = new CollectingErrorHandler();
             AdhocAbstractSyntaxTree tree = new AdhocAbstractSyntaxTree(new ParserOptions()
             {
-                ErrorHandler = errHandler
+                ErrorHandler = _errorHandler
             });
 
             Script script = tree.ParseScript(code);
 
             var analyser = new AdhocScriptAnalyzer();
-            analyser.ErrorHandler = errHandler;
+            analyser.ErrorHandler = _errorHandler;
             analyser.ParseScript(script);
 
-            _documents[uri] = new DocumentState(uri, code, tree, analyser, version);
+            var docState = new DocumentState(uri, code, tree, analyser, version);
+            _documents[uri] = docState;
+
+            foreach (var err in _errorHandler.Errors)
+            {
+                docState.Diagnostics.Add(new Diagnostic()
+                {
+                    Message = err.Description,
+                    Source = err.Source,
+                    Range = DocumentRange.From(new LSPPos(err.LineNumber - 1, err.Column), new LSPPos(err.LineNumber - 1, err.Column)),
+                    Severity = DiagnosticSeverity.Error,
+                });
+            }
         }
     }
 
@@ -65,3 +82,23 @@ public class AdhocDocumentService
         _documents.TryRemove(uri, out _);
     }
 }
+
+public class DocumentState
+{
+    public string Uri { get; set; }
+    public string Text { get; set; }
+    public AdhocAbstractSyntaxTree Ast { get; set; }
+    public AdhocScriptAnalyzer Analyser { get; set; }
+    public List<Diagnostic>? Diagnostics { get; set; } = [];
+    public int Version { get; set; }
+
+    public DocumentState(string uri, string text, AdhocAbstractSyntaxTree ast, AdhocScriptAnalyzer analyser, int version)
+    {
+        Uri = uri;
+        Text = text;
+        Ast = ast;
+        Analyser = analyser;
+        Version = version;
+    }
+}
+

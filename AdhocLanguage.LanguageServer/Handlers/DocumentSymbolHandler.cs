@@ -19,15 +19,15 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AdhocLanguage.LanguageServer;
+namespace AdhocLanguage.LanguageServer.Handlers;
 
 public class DocumentSymbolHandler : DocumentSymbolHandlerBase
 {
-    private readonly ServerContext _context;
+    private readonly AdhocDocumentService _documents;
 
-    public DocumentSymbolHandler(ServerContext context)
+    public DocumentSymbolHandler(AdhocDocumentService documents)
     {
-        _context = context;
+        _documents = documents;
     }
 
     public override void RegisterCapability(ServerCapabilities serverCapabilities, ClientCapabilities clientCapabilities)
@@ -37,7 +37,7 @@ public class DocumentSymbolHandler : DocumentSymbolHandlerBase
 
     protected override Task<DocumentSymbolResponse> Handle(DocumentSymbolParams request, CancellationToken token)
     {
-        DocumentState? document = _context.Documents.GetDocument(request.TextDocument.Uri.FileSystemPath);
+        DocumentState? document = _documents.GetDocument(request.TextDocument.Uri.FileSystemPath);
         if (document is null)
             return Task.FromResult<DocumentSymbolResponse>(null);
 

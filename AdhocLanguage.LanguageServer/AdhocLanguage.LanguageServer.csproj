@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="EmmyLua.LanguageServer.Framework" Version="0.9.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.9" />
   </ItemGroup>
 
   <ItemGroup>

@@ -3,12 +3,17 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
+using AdhocLanguage.LanguageServer.Handlers;
 using AdhocLanguage.LanguageServer.Services;
+
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AdhocLanguage.LanguageServer;
 
 public class AdhocLanguageServer
 {
+    private IServiceProvider _services;
+
     public AdhocLanguageServer()
     {
 
@@ -16,9 +21,21 @@ public class AdhocLanguageServer
 
     public async Task StartAsync()
     {
+
+
         try
         { 
             var server = EmmyLua.LanguageServer.Framework.Server.LanguageServer.From(Console.OpenStandardInput(), Console.OpenStandardOutput());
+
+            _services = new ServiceCollection()
+                .AddSingleton(server)
+
+                // Handlers
+                .AddSingleton<TextDocumentSyncHandler>()
+                .AddSingleton<CompletionHandler>()
+                .AddSingleton<DocumentSymbolHandler>()
+                .BuildServiceProvider();
+
             server.OnInitialize((request, serverInfo) =>
             {
                 serverInfo.Name = "Adhoc Language Server";
@@ -31,10 +48,9 @@ public class AdhocLanguageServer
                 await server.Client.LogInfo("Server initialized!");
             });
 
-            var context = new ServerContext();
-            server.AddHandler(new TextDocumentSyncHandler(context));
-            server.AddHandler(new CompletionHandler(context));
-            server.AddHandler(new DocumentSymbolHandler(context));
+            server.AddHandler(_services.GetRequiredService<TextDocumentSyncHandler>());
+            server.AddHandler(_services.GetRequiredService<CompletionHandler>());
+            server.AddHandler(_services.GetRequiredService<DocumentSymbolHandler>());
             await server.Run();
         }
         catch (Exception ex)

@@ -16,22 +16,22 @@ using EmmyLua.LanguageServer.Framework.Protocol.Model.Kind;
 using EmmyLua.LanguageServer.Framework.Server.Handler;
 using GTAdhocToolchain.Core.Variables;
 
-namespace AdhocLanguage.LanguageServer;
+namespace AdhocLanguage.LanguageServer.Handlers;
 
 public class CompletionHandler : CompletionHandlerBase
 {
-    private readonly ServerContext _context;
+    private readonly AdhocDocumentService _documents;
 
-    public CompletionHandler(ServerContext context)
+    public CompletionHandler(AdhocDocumentService documents)
     {
-        _context = context;
+        _documents = documents;
     }
 
     protected override Task<CompletionResponse?> Handle(CompletionParams request, CancellationToken token)
     {
         Console.Error.WriteLine("CompletionHandler.Handle");
 
-        DocumentState? document = _context.Documents.GetDocument(request.TextDocument.Uri.FileSystemPath);
+        DocumentState? document = _documents.GetDocument(request.TextDocument.Uri.FileSystemPath);
         if (document is null)
             return Task.FromResult<CompletionResponse?>(null);
 
