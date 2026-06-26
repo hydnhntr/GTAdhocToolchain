@@ -1,20 +1,13 @@
 ﻿// Copyright (c) 2026 Nenkai
 // SPDX-License-Identifier: MIT
 
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Reflection;
-
-using System.CommandLine;
+using AdhocLanguage.LanguageServer;
 
 using Esprima;
 
-using NLog;
-
 using GTAdhocToolchain.CodeGen;
 using GTAdhocToolchain.Compiler;
+using GTAdhocToolchain.Core;
 using GTAdhocToolchain.Core.Instructions;
 using GTAdhocToolchain.Disasm;
 using GTAdhocToolchain.Menu;
@@ -23,7 +16,18 @@ using GTAdhocToolchain.Menu.Resources;
 using GTAdhocToolchain.Packaging;
 using GTAdhocToolchain.Preprocessor;
 using GTAdhocToolchain.Project;
-using GTAdhocToolchain.Core;
+
+using Microsoft.Extensions.Logging;
+
+using NLog.Extensions.Logging;
+
+using System;
+using System.Collections.Generic;
+using System.CommandLine;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace GTAdhocToolchain.CLI;
 
@@ -31,17 +35,26 @@ public class Program
 {
     public static Version? GetExecutableVersion() => Assembly.GetEntryAssembly()?.GetName().Version;
 
-    private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
+    private static ILoggerFactory _loggerFactory;
+    private static ILogger _logger;
 
     public static async Task<int> Main(string[] args)
     {
-        Console.WriteLine("---------------------------------------------");
-        Console.WriteLine($"- GTAdhocToolchain {GetExecutableVersion()?.ToString() ?? "vUnknown"} by Nenkai");
-        Console.WriteLine("---------------------------------------------");
-        Console.WriteLine("- https://github.com/Nenkai");
-        Console.WriteLine("---------------------------------------------");
+        bool isLanguageServer = args.Length > 0 && args[0] == "language-server";
+        if (!isLanguageServer)
+        {
+            Console.WriteLine("---------------------------------------------");
+            Console.WriteLine($"- GTAdhocToolchain {GetExecutableVersion()?.ToString() ?? "vUnknown"} by Nenkai");
+            Console.WriteLine("---------------------------------------------");
+            Console.WriteLine("- https://github.com/Nenkai");
+            Console.WriteLine("---------------------------------------------");
 
-        if (args.Length == 1 && args[0] != "build")
+            _loggerFactory = LoggerFactory.Create(builder => builder.AddNLog(svc => new NLog.LogFactory()));
+            _logger = _loggerFactory.CreateLogger<Program>();
+        }
+
+
+        if (args.Length == 1 && args[0] != "build" && !isLanguageServer)
         {
             if (Directory.Exists(args[0]))
             {
@@ -115,6 +128,13 @@ public class Program
         };
         mprojectToTextCommand.SetAction(MProjectToText);
 
+        var languageServer = new Command("language-server", "Language Server")
+        {
+            new Option<bool>("--wait-for-debugger") { Description = "Pauses startup to allow attaching a debugger." },
+            new Option<bool>("--stdio") { Description = "Use stdio transport (default/only mode currently)." }
+        };
+        languageServer.SetAction(LanguageServerAsync);
+
         var rootCommand = new RootCommand("adhoc")
         {
             buildCommand,
@@ -122,7 +142,8 @@ public class Program
             packCommand,
             unpackCommand,
             mprojectToBinCommand,
-            mprojectToTextCommand
+            mprojectToTextCommand,
+            languageServer,
         };
 
         return await rootCommand.Parse(args).InvokeAsync();
@@ -141,7 +162,7 @@ public class Program
                 }
                 catch (Exception e)
                 {
-                    Logger.Error(e, "Errored while reading {}:", file);
+                    _logger.LogError(e, "Errored while reading {}:", file);
                     return -1;
                 }
 
@@ -173,7 +194,7 @@ public class Program
                 var gpb = GpbBase.ReadFile(file);
                 if (gpb is null)
                 {
-                    Logger.Error("Could not parse GPB Header.");
+                    _logger.LogError("Could not parse GPB Header.");
                     return -1;
                 }
 
@@ -185,7 +206,7 @@ public class Program
         }
         catch (Exception e)
         {
-            Logger.Error(e, "Errored while processing file {}", file);
+            _logger.LogError(e, "Errored while processing file {}", file);
             return -1;
         }
 
@@ -220,15 +241,15 @@ public class Program
             string[] files = Directory.GetFiles(Directory.GetCurrentDirectory(), "*.yaml", SearchOption.AllDirectories);
             if (files.Length == 0)
             {
-                Logger.Error("No target project to compile in the current directory and no script file was specified. Specify the project (or script) to compile.");
+                _logger.LogError("No target project to compile in the current directory and no script file was specified. Specify the project (or script) to compile.");
                 return -1;
             }
 
             if (files.Length > 1)
             {
-                Logger.Error("More than one target project in the current directory. Specify the project (or script) to compile.");
+                _logger.LogError("More than one target project in the current directory. Specify the project (or script) to compile.");
                 foreach (var file in files)
-                    Logger.Error($"- {Path.GetFileName(file)}");
+                    _logger.LogError($"- {Path.GetFileName(file)}");
 
                 return -1;
             }
@@ -239,7 +260,7 @@ public class Program
         {
             if (!File.Exists(inputPath))
             {
-                Logger.Error("Specified input file does not exist.");
+                _logger.LogError("Specified input file does not exist.");
                 return -1;
             }
         }
@@ -260,7 +281,7 @@ public class Program
         }
         else
         {
-            Logger.Error("Input File is not a project or script.");
+            _logger.LogError("Input File is not a project or script.");
             return -1;
         }
     }
@@ -283,7 +304,7 @@ public class Program
             }
             catch (Exception e)
             {
-                Logger.Error($"Failed to pack gpb - {e.Message}");
+                _logger.LogError($"Failed to pack gpb - {e.Message}");
                 return -1;
             }
         }
@@ -296,13 +317,13 @@ public class Program
             }
             catch (Exception e)
             {
-                Logger.Error(e, "Failed to pack mpackage {}", inputPath);
+                _logger.LogError(e, "Failed to pack mpackage {}", inputPath);
                 return -1;
             }
         }
         else
         {
-            Logger.Error("Found nothing to pack - ensure the provided output path has the proper file extension (gpb/mpackage)");
+            _logger.LogError("Found nothing to pack - ensure the provided output path has the proper file extension (gpb/mpackage)");
             return -1;
         }
     }
@@ -332,7 +353,7 @@ public class Program
         }
         else
         {
-            Logger.Error("Found nothing to unpack - ensure the provided input file has the proper file extension (gpb/mpackage)");
+            _logger.LogError("Found nothing to unpack - ensure the provided input file has the proper file extension (gpb/mpackage)");
             return -1;
         }
     }
@@ -341,13 +362,13 @@ public class Program
     {
         if (inputFile.ToLower().EndsWith("gpb"))
         {
-            Logger.Info($"[:] {inputFile} - assuming input is GPB");
+            _logger.LogInformation($"[:] {inputFile} - assuming input is GPB");
             ExtractGpb(inputFile, outputPath, convertGpbFiles);
             return 0;
         }
         else if (inputFile.EndsWith("mpackage"))
         {
-            Logger.Info($"[:] {inputFile} - assuming input is MPackage");
+            _logger.LogInformation($"[:] {inputFile} - assuming input is MPackage");
             try
             {
                 AdhocPackage.ExtractPackage(inputFile);
@@ -355,7 +376,7 @@ public class Program
             }
             catch (Exception e)
             {
-                Logger.Error($"Failed to unpack mpackage - {e.Message}.");
+                _logger.LogError($"Failed to unpack mpackage - {e.Message}.");
                 return -1;
             }
         }
@@ -368,7 +389,7 @@ public class Program
         var gpb = GpbBase.ReadFile(inputFile);
         if (gpb is null)
         {
-            Logger.Error("Could not parse GPB Header.");
+            _logger.LogError("Could not parse GPB Header.");
             return -1;
         }
 
@@ -377,19 +398,19 @@ public class Program
 
         if (string.IsNullOrEmpty(outputPath))
         {
-            Logger.Error("Could not determine an output directory.");
+            _logger.LogError("Could not determine an output directory.");
             return -1;
         }
 
         try
         {
             gpb.Unpack(Path.GetFileNameWithoutExtension(inputFile), outputPath, convertGpbFiles);
-            Logger.Info("Extracted to {outputPath}", outputPath);
+            _logger.LogInformation("Extracted to {outputPath}", outputPath);
             return 0;
         }
         catch (Exception e)
         {
-            Logger.Error(e, "Failed to unpack gpb {}", inputFile);
+            _logger.LogError(e, "Failed to unpack gpb {}", inputFile);
             return -1;
         }
     }
@@ -403,28 +424,28 @@ public class Program
         }
         catch (Exception e)
         {
-            Logger.Error($"Failed to load project file - {e.Message}");
+            _logger.LogError($"Failed to load project file - {e.Message}");
             return -1;
         }
 
         if (prj is null)
         {
-            Logger.Error($"Unable to verify project file.");
+            _logger.LogError($"Unable to verify project file.");
             return -1;
         }
 
-        Logger.Info($"Project file: {inputPath}");
+        _logger.LogInformation($"Project file: {inputPath}");
         prj.PrintInfo();
 
-        Logger.Info("Started project build.");
+        _logger.LogInformation("Started project build.");
         if (!prj.Build(writeExceptionsToFile, outputPath))
         {
-            Logger.Error("Project build failed.");
+            _logger.LogError("Project build failed.");
             return -1;
         }
         else
         {
-            Logger.Info("Project build successful.");
+            _logger.LogInformation("Project build successful.");
             return 0;
         }
     }
@@ -439,7 +460,7 @@ public class Program
             string? absoluteIncludePath = Path.GetDirectoryName(Path.GetFullPath(inputPath));
             if (string.IsNullOrWhiteSpace(absoluteIncludePath))
             {
-                Logger.Error("Could not determine base directory of input file?");
+                _logger.LogError("Could not determine base directory of input file?");
                 return -1;
             }
 
@@ -462,21 +483,20 @@ public class Program
                 return 0;
             }
 
-            Logger.Info($"Started script build ({inputPath}).");
-            Logger.Warn($"NOTE: Compiling for Adhoc Version {version}");
+            _logger.LogInformation($"Started script build ({inputPath}).");
+            _logger.LogWarning($"NOTE: Compiling for Adhoc Version {version}");
 
-            var errorHandler = new AdhocErrorHandler();
-            var parser = new AdhocAbstractSyntaxTree(preprocessed, new ParserOptions()
+            var errorHandler = new CollectingErrorHandler();
+            var parser = new AdhocAbstractSyntaxTree(new ParserOptions()
             {
                 ErrorHandler = errorHandler
             });
-            parser.SetFileName(inputPath);
 
-            var program = parser.ParseScript();
-            if (errorHandler.HasErrors())
+            var program = parser.ParseScript(preprocessed, inputPath);
+            if (errorHandler.Errors.Any())
             {
                 foreach (ParseError error in errorHandler.Errors)
-                    Logger.Error($"Syntax error: {error.Description} at {error.Source}:{error.LineNumber}");
+                    _logger.LogError($"Syntax error: {error.Description} at {error.Source}:{error.LineNumber}");
 
                 return -1;
             }
@@ -496,30 +516,30 @@ public class Program
             codeGen.Generate();
             codeGen.SaveTo(output);
 
-            Logger.Info($"Script build successful.");
+            _logger.LogInformation($"Script build successful.");
             return 0;
         }
         catch (PreprocessorException preprocessException)
         {
-            Logger.Error($"{preprocessException.FileName}:{preprocessException.Token.Location.Start.Line}: preprocess error: {preprocessException.Message}");
+            _logger.LogError($"{preprocessException.FileName}:{preprocessException.Token.LineNumber}: preprocess error: {preprocessException.Message}");
         }
         catch (ParserException parseException)
         {
-            Logger.Error($"Syntax error: {parseException.Description} at {parseException.SourceText}:{parseException.LineNumber}");
+            _logger.LogError($"Syntax error: {parseException.Description} at {parseException.SourceLocation}:{parseException.LineNumber}");
         }
         catch (AdhocCompilationException compileException)
         {
             if (compileException.InnerException is not null)
-                Logger.Error($"Compilation error: {compileException.Message} - {compileException.InnerException.Message}");
+                _logger.LogError($"Compilation error: {compileException.Message} - {compileException.InnerException.Message}");
             else
-                Logger.Error($"Compilation error: {compileException.Message}");
+                _logger.LogError($"Compilation error: {compileException.Message}");
         }
         catch (Exception e)
         {
-            Logger.Fatal(e, "Internal error in compilation");
+            _logger.LogCritical(e, "Internal error in compilation");
         }
 
-        Logger.Error("Script build failed.");
+        _logger.LogError("Script build failed.");
         return -1;
     }
 
@@ -573,18 +593,17 @@ public class Program
 
             string preprocessed = preprocessor.Preprocess(line);
 
-            var errorHandler = new AdhocErrorHandler();
-            var parser = new AdhocAbstractSyntaxTree(preprocessed, new ParserOptions()
+            var errorHandler = new CollectingErrorHandler();
+            var parser = new AdhocAbstractSyntaxTree(new ParserOptions()
             {
                 ErrorHandler = errorHandler
             });
-            parser.SetFileName("temp.ad");
 
-            var program = parser.ParseScript();
-            if (errorHandler.HasErrors())
+            var program = parser.ParseScript(preprocessed, "temp.ad");
+            if (errorHandler.Errors.Any())
             {
                 foreach (ParseError error in errorHandler.Errors)
-                    Logger.Error($"Syntax error: {error.Description} at {error.Source}:{error.LineNumber}");
+                    _logger.LogError($"Syntax error: {error.Description} at {error.Source}:{error.LineNumber}");
             }
             else
             {
@@ -618,22 +637,22 @@ public class Program
                 }
                 catch (PreprocessorException preprocessException)
                 {
-                    Logger.Error($"{preprocessException.FileName}:{preprocessException.Token.Location.Start.Line}: preprocess error: {preprocessException.Message}");
+                    _logger.LogError($"{preprocessException.FileName}:{preprocessException.Token.LineStart}: preprocess error: {preprocessException.Message}");
                 }
                 catch (ParserException parseException)
                 {
-                    Logger.Error($"Syntax error: {parseException.Description} at {parseException.SourceText}:{parseException.LineNumber}");
+                    _logger.LogError($"Syntax error: {parseException.Description} at {parseException.SourceLocation}:{parseException.LineNumber}");
                 }
                 catch (AdhocCompilationException compileException)
                 {
                     if (compileException.InnerException is not null)
-                        Logger.Error($"Compilation error: {compileException.Message} - {compileException.InnerException.Message}");
+                        _logger.LogError($"Compilation error: {compileException.Message} - {compileException.InnerException.Message}");
                     else
-                        Logger.Error($"Compilation error: {compileException.Message}");
+                        _logger.LogError($"Compilation error: {compileException.Message}");
                 }
                 catch (Exception e)
                 {
-                    Logger.Fatal(e, "Internal error in compilation");
+                    _logger.LogCritical(e, "Internal error in compilation");
                 }
             }
         }
@@ -644,12 +663,12 @@ public class Program
         uint version = parseResult.GetValue<uint>("--version");
         if (version == 0)
         {
-            Logger.Error("Version 0 is not currently supported.");
+            _logger.LogError("Version 0 is not currently supported.");
             return -1;
         }
         else if (version > 1 || version < 0)
         {
-            Logger.Error("Version must be 0 or 1. (0 not currently supported).");
+            _logger.LogError("Version must be 0 or 1. (0 not currently supported).");
             return -1;
         }
 
@@ -666,7 +685,7 @@ public class Program
 
             if (rootNode is null)
             {
-                Logger.Error("Could not read mproject.");
+                _logger.LogError("Could not read mproject.");
                 return -1;
             }
         }
@@ -677,12 +696,12 @@ public class Program
             writer.Version = (int)version;
             writer.WriteNode(rootNode);
 
-            Logger.Info($"Done. Exported to '{outputPath}'.");
+            _logger.LogInformation($"Done. Exported to '{outputPath}'.");
             return 0;
         }
         catch (Exception e)
         {
-            Logger.Error(e, "Failed to export to '{}'", outputPath);
+            _logger.LogError(e, "Failed to export to '{}'", outputPath);
             return -1;
         }
     }
@@ -703,7 +722,7 @@ public class Program
 
             if (rootNode is null)
             {
-                Logger.Error("Could not read mproject.");
+                _logger.LogError("Could not read mproject.");
                 return -1;
             }
         }
@@ -714,13 +733,27 @@ public class Program
             writer.Debug = debug;
             writer.WriteNode(rootNode);
 
-            Logger.Info("Done. Exported to '{}'.", outputPath);
+            _logger.LogInformation("Done. Exported to '{}'.", outputPath);
             return 0;
         }
         catch (Exception e)
         {
-            Logger.Error(e, "Failed to export to '{}'", outputPath);
+            _logger.LogError(e, "Failed to export to '{}'", outputPath);
             return -1;
         }
+    }
+
+    public static async Task<int> LanguageServerAsync(ParseResult parseResult)
+    {
+        bool waitForDebugger = parseResult.GetValue<bool>("--wait-for-debugger");
+        if (waitForDebugger && !Debugger.IsAttached)
+        {
+            Debugger.Launch();
+        }
+
+        var languageServer = new AdhocLanguageServer();
+        await languageServer.StartAsync();
+
+        return 0;
     }
 }

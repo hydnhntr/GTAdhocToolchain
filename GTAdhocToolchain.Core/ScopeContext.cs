@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using Esprima;
 using Esprima.Ast;
 
 using GTAdhocToolchain.Core;
@@ -33,10 +34,15 @@ public class ScopeContext
 
     public int StackCounter { get; set; }
 
+    public ScopeContext? Parent { get; set; }
+    public List<ScopeContext> Children { get; set; } = [];
+
     /// <summary>
     /// Whether to emit a LEAVE instruction on scope exit.
     /// </summary>
     public bool CleanupOnExit { get; set; } = false;
+
+    public Location Location { get; set; }
 }
 
 public enum AdhocScopeType

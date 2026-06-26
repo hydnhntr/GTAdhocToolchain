@@ -88,7 +88,7 @@ public class AdhocExpressionEvaluator
     public int EvalTernary()
     {
         int c = EvalBinary(11);
-        if (_lookahead?.Value as string != "?")
+        if (_lookahead.Value as string != "?")
             return c;
 
         NextToken();
@@ -113,7 +113,7 @@ public class AdhocExpressionEvaluator
         {
             int value = EvalBinary(p - 1);
 
-            while (_lookahead != null && BinaryPrecedence.TryGetValue(_lookahead.Value as string, out int prec) && prec == p)
+            while (_lookahead.Type != default && BinaryPrecedence.TryGetValue(_lookahead.Value as string, out int prec) && prec == p)
             {
                 var op = BinaryOperations[_lookahead.Value as string];
                 NextToken();
@@ -128,7 +128,7 @@ public class AdhocExpressionEvaluator
 
     public int EvalUnary()
     {
-        if (_lookahead is null)
+        if (_lookahead.Type == default)
             throw new Exception("operator '!' has no right operand");
 
         if (UnaryOperations.TryGetValue(_lookahead.Value as string, out Func<int, int> op))
@@ -141,7 +141,7 @@ public class AdhocExpressionEvaluator
             NextToken();
             var v = Evaluate();
 
-            if (_lookahead?.Value as string != ")")
+            if (_lookahead.Value as string != ")")
                 throw new Exception("missing closing parenthesis");
 
             NextToken();
@@ -177,6 +177,6 @@ public class AdhocExpressionEvaluator
         if (_index < _tokens.Count)
             _lookahead = _tokens[_index];
         else
-            _lookahead = null;
+            _lookahead = default;
     }
 }

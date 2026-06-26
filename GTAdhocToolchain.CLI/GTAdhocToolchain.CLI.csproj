@@ -16,10 +16,12 @@
 
   <ItemGroup>
     <PackageReference Include="NLog" Version="6.1.3" />
+    <PackageReference Include="NLog.Extensions.Logging" Version="6.1.3" />
     <PackageReference Include="System.CommandLine" Version="2.0.8" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\AdhocLanguage.LanguageServer\AdhocLanguage.LanguageServer.csproj" />
     <ProjectReference Include="..\GTAdhocToolchain.Analyzer\GTAdhocToolchain.Analyzer.csproj" />
     <ProjectReference Include="..\GTAdhocToolchain.Menu\GTAdhocToolchain.Menu.csproj" />
     <ProjectReference Include="..\GTAdhocToolchain.Compiler\GTAdhocToolchain.Compiler.csproj" />
@@ -37,7 +39,6 @@
 
   <Target Name="CopyCustomContent" AfterTargets="AfterBuild">
     <Copy SourceFiles="../scripts/GTAdhocCompare.py" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-	<Copy SourceFiles="../scripts/AdhocToolchainGUI.py" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

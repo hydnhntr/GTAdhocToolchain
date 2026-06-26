@@ -176,6 +176,10 @@ public class AdhocScriptPreprocessor
             {
                 ProcessSourceIdentifier(_state.Lookahead);
             }
+            else if (_state.Lookahead.Type == TokenType.Template)
+            {
+                Write(_state.Lookahead.RawTemplate);
+            }
             else
             {
                 Write(_state.Lookahead.Value as string);
@@ -214,7 +218,7 @@ public class AdhocScriptPreprocessor
         define.Name = name.Value as string;
         define.NameToken = name;
 
-        int startLine = name.Location.Start.Line;
+        int startLine = name.LineNumber;
 
         NextToken();
 
@@ -225,26 +229,26 @@ public class AdhocScriptPreprocessor
                 break;
 
             if (count == 0 &&
-                (string)_state.Lookahead.Value == "(" && _state.Lookahead.Location.Start == name.Location.End) // Function macro arguments's open parenthesis must be right next to macro name
+                (string)_state.Lookahead.Value == "(" && _state.Lookahead.Start == name.End) // Function macro arguments's open parenthesis must be right next to macro name
             {
                 ParseMacroFunctionParameters(define);
             }
             else if (_state.Lookahead.Value as string == "\\")
             {
                 NextToken();
-                startLine = _state.Lookahead.Location.Start.Line;
+                startLine = _state.Lookahead.LineNumber;
                 continue;
             }
             else
             {
-                if (_state.Lookahead.Location.Start.Line != startLine)
+                if (_state.Lookahead.LineNumber != startLine)
                     break;
 
                 // If the next token is separated by a whitespace, insert one as a token
                 if (define.Content.Count > 0)
                 {
-                    if (define.Content[^1].Location.End != _state.Lookahead.Location.Start)
-                        define.Content.Add(new Token() { Value = " " });
+                    if (define.Content[^1].End != _state.Lookahead.Start)
+                        define.Content.Add(CreateString(" ", _state.Lookahead.Start, _state.Lookahead.End, _state.Lookahead.LineNumber, _state.Lookahead.LineStart));
                 }
 
                 define.Content.Add(_state.Lookahead);
@@ -255,6 +259,11 @@ public class AdhocScriptPreprocessor
         }
 
         return define;
+    }
+
+    private Token CreateString(string value, int start, int end, int lineNumber, int lineStart)
+    {
+        return Token.CreateTemplate(value, value, false, false, default, false, start, end, lineNumber, lineStart);
     }
 
     /// <summary>
@@ -324,7 +333,7 @@ public class AdhocScriptPreprocessor
 
     private void DoIf()
     {
-        int line = _state.Lookahead.Location.Start.Line;
+        int line = _state.Lookahead.LineNumber;
         Token ifToken = _state.Lookahead;
         NextToken();
 
@@ -338,11 +347,11 @@ public class AdhocScriptPreprocessor
             if (_state.Lookahead.Value as string == "\\")
             {
                 NextToken();
-                line = _state.Lookahead.Location.Start.Line;
+                line = _state.Lookahead.LineNumber;
                 continue;
             }
 
-            if (line != _state.Lookahead.Location.Start.Line)
+            if (line != _state.Lookahead.LineNumber)
                 break;
 
             cond.Add(_state.Lookahead);
@@ -380,6 +389,9 @@ public class AdhocScriptPreprocessor
 
         if (_state.Lookahead.Type != TokenType.Template)
             ThrowPreprocessorError(_state.Lookahead, "#include expects a file name");
+
+        if (string.IsNullOrWhiteSpace(_state.BaseDirectory))
+            ThrowPreprocessorError(_state.Lookahead, "#include but no base directory set");
 
         string file = (_state.Lookahead.Value as string).Trim('\"');
         string pathToInclude = Path.Combine(_state.BaseDirectory, file);
@@ -426,7 +438,7 @@ public class AdhocScriptPreprocessor
         // Restore state
         _state = oldState;
 
-        WriteLine($"# {_state.Lookahead.Location.Start.Line} \"{_state.CurrentFileName}\"");
+        WriteLine($"# {_state.Lookahead.LineNumber} \"{_state.CurrentFileName}\"");
     }
 
     private void DoConditional(bool res)
@@ -462,7 +474,7 @@ public class AdhocScriptPreprocessor
                 if (!res)
                 {
                     var cond = new List<Token>();
-                    int line = _state.Lookahead.Location.Start.Line;
+                    int line = _state.Lookahead.LineNumber;
 
                     NextToken();
                     while (true)
@@ -473,11 +485,11 @@ public class AdhocScriptPreprocessor
                         if (_state.Lookahead.Value as string == "\\")
                         {
                             NextToken();
-                            line = _state.Lookahead.Location.Start.Line;
+                            line = _state.Lookahead.LineNumber;
                             continue;
                         }
 
-                        if (line != _state.Lookahead.Location.Start.Line)
+                        if (line != _state.Lookahead.LineNumber)
                             break;
 
                         cond.Add(_state.Lookahead);
@@ -614,7 +626,8 @@ public class AdhocScriptPreprocessor
             else if (define.IsSpecialMacro)
             {
                 var expanded = ExpandSpecialMacro(define, token);
-                WriteTokens([expanded]);
+                if (expanded is not null)
+                    WriteTokens([expanded.Value]);
             }
             else
             {
@@ -628,31 +641,33 @@ public class AdhocScriptPreprocessor
         }
     }
     
-    private Token ExpandSpecialMacro(Macro define, Token token)
+    private Token? ExpandSpecialMacro(Macro define, Token token)
     {
         switch (define.Name)
         {
             case "__LINE__":
-                return new Token() { Value = $"{_state.Lookahead.Location.Start.Line}u" }; // Since we aren't reading when expanding, it's fine to use the lookahead.
+                // Since we aren't reading when expanding, it's fine to use the lookahead.
+                return CreateString($"{_state.Lookahead.LineNumber}u", _state.Lookahead.Start, _state.Lookahead.End, _state.Lookahead.LineNumber, _state.Lookahead.LineNumber); 
 
             case "__FILE__":
-                return new Token() { Value = $"\"{_state.CurrentFileName.Replace("\\", "\\\\")}\"" }; // Make sure to escape it
+                return CreateString($"\"{_state.CurrentFileName.Replace("\\", "\\\\")}\"", // Make sure to escape it
+                    _state.Lookahead.Start, _state.Lookahead.End, _state.Lookahead.LineNumber, _state.Lookahead.LineNumber);
 
             case "__COUNTER__":
                 {
-                    var tokenValue = new Token() { Value = _counter.ToString() };
                     _counter++;
-                    return tokenValue;
+
+                    return CreateString(_counter.ToString(), _state.Lookahead.Start, _state.Lookahead.End, _state.Lookahead.LineNumber, _state.Lookahead.LineNumber);
                 }
 
             case "__DATE__":
-                return new Token() { Value = $"\"{_time:MMM dd yyyy}\"" };
+                return CreateString($"\"{_time:MMM dd yyyy}\"", _state.Lookahead.Start, _state.Lookahead.End, _state.Lookahead.LineNumber, _state.Lookahead.LineNumber);
 
             case "__TIME__":
-                return new Token() { Value = $"\"{_time:HH:mm:ss}\"" };
+                return CreateString($"\"{_time:HH:mm:ss}\"", _state.Lookahead.Start, _state.Lookahead.End, _state.Lookahead.LineNumber, _state.Lookahead.LineNumber);
 
             case "__TIMESTAMP__":
-                return new Token() { Value = $"\"{_state.FileTimeStamp:MMM dd yyyy HH:mm:ss yyyy}\"" };
+                return CreateString($"\"{_state.FileTimeStamp:MMM dd yyyy HH:mm:ss yyyy}\"", _state.Lookahead.Start, _state.Lookahead.End, _state.Lookahead.LineNumber, _state.Lookahead.LineNumber);
         }
 
         return null;
@@ -689,12 +704,12 @@ public class AdhocScriptPreprocessor
                     if (j < tokens.Count - 1)
                     {
                         var nextToken = tokens[j + 1];
-                        if (toks.Location.End.Column != nextToken.Location.Start.Column)
+                        if (toks.End != nextToken.Start)
                             str += ' ';
                     }
                 }
 
-                list.Add(new Token() { Value = $"\"{str}\"" });
+                list.Add(CreateString($"\"{str}\"", 0, 0, 0, 0));
 
                 i++;
                 continue;
@@ -746,24 +761,17 @@ public class AdhocScriptPreprocessor
 
                     list.AddRange(expanded);
                 }
-                else if (define.IsSpecialMacro)
+                else if (def.IsSpecialMacro)
                 {
-                    var expanded = ExpandSpecialMacro(define, token);
-                    list.AddRange([expanded]);
+                    var expanded = ExpandSpecialMacro(def, token);
+                    if (expanded is not null)
+                        list.AddRange([expanded.Value]);
                 }
                 else
                 {
-                    if (def.IsSpecialMacro)
-                    {
-                        list.Add(ExpandSpecialMacro(def, token));
-                    }
-                    else
-                    {
-                        List<Token> expanded = ExpandTokens(def.Content);
-                        list.AddRange(expanded);
-                    }
+                    List<Token> expanded = ExpandTokens(def.Content);
+                    list.AddRange(expanded);
                 }
-                
             }
             else
             {
@@ -813,16 +821,16 @@ public class AdhocScriptPreprocessor
             else if (define.IsSpecialMacro)
             {
                 var expanded = ExpandSpecialMacro(define, token);
-                output.AddRange([expanded]);
+                if (expanded is not null)
+                    output.AddRange([expanded.Value]);
                 currentIndex++;
             }
             else
             {
-                int idx = 0;
                 if (define.Content.Count == 0)
                     return output;
 
-                output.AddRange(Evaluate(define.Content, ref idx));
+                output.AddRange(ExpandTokens(define.Content));
             }
         }
         else
@@ -875,7 +883,7 @@ public class AdhocScriptPreprocessor
         var token = list[currentIndex++];
         if (token.Type == TokenType.Identifier)
         {
-            if (_definedMacros.TryGetValue(token.Value as string, out Macro n))
+            if (_definedMacros.TryGetValue(token.Value as string, out Macro _))
             {
                 return EvalCollectArguments(list, ref currentIndex, define);
             }
@@ -973,7 +981,7 @@ public class AdhocScriptPreprocessor
             ThrowPreprocessorError(_state.Lookahead, $"Unexpected '{_state.Lookahead.Value as string}'");
     }
 
-    private void Write(string str)
+    private void Write(ReadOnlySpan<char> str)
     {
         if (!_state.Writing)
             return;
@@ -1011,7 +1019,7 @@ public class AdhocScriptPreprocessor
     /// </summary>
     private string GetTokenRaw(Token token)
     {
-        return _state.TokenScanner.Source.Slice(token.Start, token.End);
+        return _state.TokenScanner.Code.AsSpan(token.Start, token.End - token.Start).ToString();
     }
 
     private void NextToken()
@@ -1019,17 +1027,20 @@ public class AdhocScriptPreprocessor
         int prevIndex = _state.TokenScanner.Index;
         CollectComments();
 
-        Write(_state.TokenScanner.Source.Substring(prevIndex, _state.TokenScanner.Index - prevIndex));
+        Write(_state.TokenScanner.Code.AsSpan(prevIndex, _state.TokenScanner.Index - prevIndex));
 
         var token = _state.TokenScanner.Lex();
-        Token t = new Token { Type = token.Type, Value = GetTokenRaw(token), Start = token.Start, End = token.End };
 
-        var start = new Position(token.LineNumber, token.Start - _state.TokenScanner.LineStart);
-        var end = new Position(_state.TokenScanner.LineNumber, _state.TokenScanner.Index - _state.TokenScanner.LineStart);
-
-        t.Location = t.Location.WithPosition(start, end);
-
-        _state.Lookahead = t;
+        if (token.Type == TokenType.Template)
+        {
+            // Note: for templates, ensure that %{ is also included.
+            var templateHolder = (Token.TemplateHolder)token.GetRaw();
+            var raw = GetTokenRaw(token);
+            _state.Lookahead = Token.CreateTemplate(raw, raw, token.Head, token.Tail, templateHolder.NotEscapeSequenceHead, token.HasHexEscape, 
+                token.Start, _state.TokenScanner.Index, token.LineNumber, token.LineStart);
+        }
+        else
+            _state.Lookahead = Token.Create(token.Type, GetTokenRaw(token), token.Start, _state.TokenScanner.Index, token.LineNumber, token.LineStart);
     }
 
     private void CollectComments()
@@ -1040,27 +1051,27 @@ public class AdhocScriptPreprocessor
         }
         else
         {
-            var comments = _state.TokenScanner.ScanComments();
-
-            if (comments.Count > 0)
+            /*
+            foreach (var e in _state.TokenScanner.ScanCommentsInternal().AsReadOnlySpan())
             {
-                for (var i = 0; i < comments.Count; ++i)
+                var value = _state.TokenScanner._source.AsSpan(e.Slice.Start, e.Slice.Length)
+                    .ToInternedString(ref _state.TokenScanner._stringPool, Scanner.NonIdentifierInterningThreshold);
+
+                var comment = new SyntaxComment(e.Type, value)
                 {
-                    var e = comments[i];
-                    var node = new Comment();
-                    node.Type = e.MultiLine ? CommentType.Block : CommentType.Line;
-                    node.Value = _state.TokenScanner.Source.Slice(e.Slice[0], e.Slice[1]);
-                    node.Start = e.Start;
-                    node.End = e.End;
-                    node.Loc = e.Loc;
-                }
+                    Range = new Range(e.Start, e.End),
+                    Location = Location.From(e.StartPosition, e.EndPosition, _state.TokenScanner._sourceLocation)
+                };
+
+                _comments.Add(comment);
             }
+            */
         }
     }
 
     private void Warn(Token token, string message)
     {
-        Logger.Warn($"{message} at {_state.CurrentFileName}:{token.Location.Start.Line}");
+        Logger.Warn($"{message} at {_state.CurrentFileName}:{token.LineNumber}");
     }
 
     private void ThrowPreprocessorError(Token token, string message)

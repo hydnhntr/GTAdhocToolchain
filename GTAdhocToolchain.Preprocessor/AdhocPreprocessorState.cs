@@ -31,8 +31,6 @@ public class AdhocPreprocessorUnit
 
     public void SetCode(string code)
     {
-        TokenScanner = new Scanner(code);
-        if (!string.IsNullOrEmpty(CurrentFileName))
-            TokenScanner.SetFileName(CurrentFileName);
+        TokenScanner = new Scanner(code, CurrentFileName);
     }
 }

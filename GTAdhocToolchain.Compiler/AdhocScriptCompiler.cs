@@ -3,6 +3,7 @@
 
 using Esprima;
 using Esprima.Ast;
+using Esprima.Ast.Adhoc;
 
 using GTAdhocToolchain.Core;
 using GTAdhocToolchain.Core.Instructions;
@@ -210,8 +211,8 @@ public class AdhocScriptCompiler
     /// </summary>
     public void BuildTryCatchDebugStatements()
     {
-        _debugPrintException = new AdhocAbstractSyntaxTree("__toplevel__::main::pdistd::AppendFile(\"/APP_DATA_RAW/exceptions.txt\", \"%{__ex}\\n\");").ParseScript();
-        _debugThrow = new AdhocAbstractSyntaxTree("throw __ex;").ParseScript();
+        _debugPrintException = new AdhocAbstractSyntaxTree().ParseScript("__toplevel__::main::pdistd::AppendFile(\"/APP_DATA_RAW/exceptions.txt\", \"%{__ex}\\n\");");
+        _debugThrow = new AdhocAbstractSyntaxTree().ParseScript("throw __ex;");
     }
 
     public void CompileStatementList(Node node)
@@ -286,7 +287,7 @@ public class AdhocScriptCompiler
                 CompileDoWhile(node.As<DoWhileStatement>());
                 break;
             case Nodes.ListAssignmentStatement:
-                CompileListAssignmentStatement(node.As<ListAssignementStatement>());
+                CompileListAssignmentStatement(node.As<ListAssignmentStatement>());
                 break;
             case Nodes.VariableDeclaration:
                 CompileVariableDeclaration(node.As<VariableDeclaration>());
@@ -320,9 +321,6 @@ public class AdhocScriptCompiler
                 break;
             case Nodes.BreakStatement:
                 CompileBreak(node.As<BreakStatement>());
-                break;
-            case Nodes.IncludeStatement:
-                CompileIncludeStatement(node.As<IncludeStatement>());
                 break;
             case Nodes.RequireStatement:
                 CompileRequireStatement(node.As<RequireStatement>());
@@ -471,9 +469,10 @@ public class AdhocScriptCompiler
         if (!CurrentFrame.Version.HasSourceFileInstructionSupport())
             return;
 
-        InsSourceFile srcFileIns = new InsSourceFile(SymbolMap.RegisterSymbol(srcFileStatement.Path, false));
+        string path = srcFileStatement.Path.StringValue!;
+        InsSourceFile srcFileIns = new InsSourceFile(SymbolMap.RegisterSymbol(path, false));
         AddInstruction(srcFileIns);
-        CurrentFrame.SetSourcePath(SymbolMap.RegisterSymbol(srcFileStatement.Path, false));
+        CurrentFrame.SetSourcePath(SymbolMap.RegisterSymbol(path, false));
     }
 
     public void CompileUndefStatement(UndefStatement undefStatement)
@@ -481,16 +480,19 @@ public class AdhocScriptCompiler
         // XX/FIXME: Undef may refer to a local variable aswell, it's not supported though
         // GT5 SoundUtil.ad undefs BootInitialize as a local which is a defined user function
 
-        var parts = undefStatement.Symbol.Split("::");
+        // TODO: FIX AST
+
+        var ident = undefStatement.Expression.As<Identifier>();
+        var parts = ident.Name.Split("::");
         List<AdhocSymbol> path = [];
         if (parts.Length > 1)
         {
-            foreach (string part in undefStatement.Symbol.Split(AdhocConstants.OPERATOR_STATIC))
+            foreach (string part in ident.Name.Split(AdhocConstants.OPERATOR_STATIC))
                 path.Add(SymbolMap.RegisterSymbol(part));
         }
         else
             path.Add(SymbolMap.RegisterSymbol(parts[0]));
-        path.Add(SymbolMap.RegisterSymbol(undefStatement.Symbol)); // full
+        path.Add(SymbolMap.RegisterSymbol(ident.Name)); // full
 
         UndefSymbol(path[^1]);
 
@@ -608,11 +610,6 @@ public class AdhocScriptCompiler
             InsertNop(BlockStatement.Location, useEndLineNumber: true);
     }
 
-    public void CompileIncludeStatement(IncludeStatement include)
-    {
-        CompileInclude(include, include.Path);
-    }
-
     // Ours is not accurate, but GT7 1.00's handler is at 30603B0 (hParser::ProcessPragmaIncludeForFile), for pragmas
     private void CompileInclude(Node node, string path)
     {
@@ -639,9 +636,8 @@ public class AdhocScriptCompiler
 
         string file = File.ReadAllText(pathToIncludeFile);
 
-        var parser = new AdhocAbstractSyntaxTree(file);
-        parser.SetFileName(path);
-        Script includeScript = parser.ParseScript();
+        var parser = new AdhocAbstractSyntaxTree();
+        Script includeScript = parser.ParseScript(file, path);
 
         // Set frame file name to our include file's
         string oldPath = CurrentFrame.SourceFilePath.Name;
@@ -667,7 +663,7 @@ public class AdhocScriptCompiler
 
     public void CompileRequireStatement(RequireStatement require)
     {
-        CompileExpression(require.Path);
+        CompileExpression(require.Expression);
         AddInstruction(InsRequire.Default, require.Location);
     }
 
@@ -807,11 +803,11 @@ public class AdhocScriptCompiler
         foreach (var str in modulePath)
             modulePathSymbols.Add(SymbolMap.RegisterSymbol(str));
 
-        var moduleDefine = new InsModuleDefine(modulePathSymbols);
-        AddInstruction(moduleDefine, moduleDecl.Location);
-
         ParentModules.Add(CurrentModule);
         SetCurrentModulePath(modulePathSymbols, AdhocVariableType.Module);
+
+        var moduleDefine = new InsModuleDefine(modulePathSymbols);
+        AddInstruction(moduleDefine, moduleDecl.Location);
 
         EnterModuleOrClassScope();
         CompileBlockStatement(moduleDecl.Body.As<BlockStatement>(), openScope: false);
@@ -1476,7 +1472,7 @@ public class AdhocScriptCompiler
             // Any other expression type is not supported, so this doubles as an argument verifier.
             var listClone = CreateAndVerifyListAssignmentForFunctionParameter(listExpr);
 
-            ListAssignementStatement assignmentExpr = new ListAssignementStatement(listClone, new Identifier(tempArgName));
+            ListAssignmentStatement assignmentExpr = new ListAssignmentStatement(listClone, new Identifier(tempArgName));
             CompileListAssignmentStatement(assignmentExpr);
         }
         else
@@ -1525,7 +1521,7 @@ public class AdhocScriptCompiler
     private ListAssignementExpression CreateAndVerifyListAssignmentForFunctionParameter(ListAssignementExpression list)
     {
         List<Node> nodes = [];
-        foreach (Node elem in list.Elements)
+        foreach (Node elem in list.Declarations)
         {
             if (elem.Type == Nodes.Identifier)
             {
@@ -1691,7 +1687,7 @@ public class AdhocScriptCompiler
     /// <param name="frame"></param>
     /// <param name="listAssignment"></param>
     /// <param name="pushWhenNoInit"></param>
-    public void CompileListAssignmentStatement(ListAssignementStatement listAssignment)
+    public void CompileListAssignmentStatement(ListAssignmentStatement listAssignment)
     {
         if (CurrentFrame.Version.ExpressionBeforeEvalOrPush()) // Must be before in late versions
             CompileExpression(listAssignment.Right);
@@ -1712,7 +1708,7 @@ public class AdhocScriptCompiler
             ThrowCompilationError(list, CompilationMessages.Error_ListAssignementRestElementUnsupported);
 
         Dictionary<ListAssignementExpression, AdhocSymbol> nestedLists = [];
-        foreach (var elem in list.Elements)
+        foreach (var elem in list.Declarations)
         {
             if (elem.Type == Nodes.Identifier)
             {
@@ -1752,18 +1748,18 @@ public class AdhocScriptCompiler
         {
             if (init.Type == Nodes.AssignmentExpression)
             {
-                InsertListAssign(list.Elements.Count, list.HasRestElement, list.Location);
+                InsertListAssign(list.Declarations.Count, list.HasRestElement, list.Location);
                 CompileExpression(init);
             }
             else
             {
                 CompileExpression(init);
-                InsertListAssign(list.Elements.Count, list.HasRestElement, list.Location);
+                InsertListAssign(list.Declarations.Count, list.HasRestElement, list.Location);
             }
         }
         else
         {
-            InsertListAssign(list.Elements.Count, list.HasRestElement, list.Location);
+            InsertListAssign(list.Declarations.Count, list.HasRestElement, list.Location);
         }
 
         if (popResult)
@@ -2021,7 +2017,7 @@ public class AdhocScriptCompiler
                     generator: false,
                     strict: true,
                     async: false);
-                subroutine.Location = new Location(call.Location.Start, call.Location.End, call.Location.Source);
+                subroutine.Location = Location.From(call.Location.Start, call.Location.End, call.Location.Source);
 
                 CompileFunctionExpression(subroutine);
             }
@@ -2226,10 +2222,10 @@ public class AdhocScriptCompiler
 
         AddInstruction(new InsMapConst(), mapExpression.Location);
 
-        foreach (var (key, value) in mapExpression.Elements)
+        foreach (var element in mapExpression.Elements)
         {
-            CompileExpression(key);
-            CompileExpression(value);
+            CompileExpression(element.Key);
+            CompileExpression(element.Value);
             AddInstruction(InsMapInsert.Default);
         }
     }
@@ -3113,7 +3109,7 @@ public class AdhocScriptCompiler
                 BinaryOperator.Times => AdhocConstants.OPERATOR_MULTIPLY,
                 BinaryOperator.Modulo => AdhocConstants.OPERATOR_MODULO,
                 BinaryOperator.BitwiseOr => AdhocConstants.OPERATOR_BITWISE_OR,
-                BinaryOperator.BitwiseXOr => AdhocConstants.OPERATOR_BITWISE_XOR,
+                BinaryOperator.BitwiseXor => AdhocConstants.OPERATOR_BITWISE_XOR,
                 BinaryOperator.BitwiseAnd => AdhocConstants.OPERATOR_BITWISE_AND,
                 BinaryOperator.LeftShift => AdhocConstants.OPERATOR_LEFT_SHIFT,
                 BinaryOperator.RightShift => AdhocConstants.OPERATOR_RIGHT_SHIFT,
@@ -3142,7 +3138,7 @@ public class AdhocScriptCompiler
             generator: false,
             strict: true,
             async: false);
-        asSubroutine.Location = new Location(finalizer.Location.Start, finalizer.Location.End, finalizer.Location.Source);
+        asSubroutine.Location = Location.From(finalizer.Location.Start, finalizer.Location.End, finalizer.Location.Source);
 
         var frame = CompileSubroutine(asSubroutine, finalizer.Body, null, new NodeList<Expression>());
 
@@ -3194,7 +3190,7 @@ public class AdhocScriptCompiler
             generator: false,
             strict: true,
             async: false);
-        asSubroutine.Location = new Location(finalizer.Location.Start, finalizer.Location.End, finalizer.Location.Source);
+        asSubroutine.Location = Location.From(finalizer.Location.Start, finalizer.Location.End, finalizer.Location.Source);
 
         var frame = CompileSubroutine(asSubroutine, finalizer.Body, null, new NodeList<Expression>());
 
@@ -3525,7 +3521,7 @@ public class AdhocScriptCompiler
     // GT7 1.00: 30F38E0
     private void CompilePragmaVarStatement(PragmaVarStatement statement)
     {
-        AdhocVariableType varType = Utils.KeywordToVariableType[statement.Type.Name!];
+        AdhocVariableType varType = Utils.KeywordToVariableType[statement.VarType.Name!];
         foreach (var decl in statement.Declaration.Declarations)
         {
             // TODO: Declarations are allowed to be paths too (unless it's modules)
@@ -3565,10 +3561,10 @@ public class AdhocScriptCompiler
 
     private void CompilePragmaPushStrictStatement(PragmaPushStrictStatement statement)
     {
-        if (statement.Value.NumericValue is bool value)
-            StrictStack.Last!.ValueRef = value;
+        if (statement.Value.BooleanValue is bool bool_)
+            StrictStack.Last!.ValueRef = bool_;
         else
-            StrictStack.Last!.ValueRef = Convert.ToInt32(statement.Value.NumericValue) == 1;
+            StrictStack.Last!.ValueRef = Convert.ToInt32(statement.Value.Value) == 1;
     }
 
     private void CompilePragmaPopStrictStatement(PragmaPopStrictStatement statement)
@@ -3582,7 +3578,7 @@ public class AdhocScriptCompiler
 
     private void CompilePragmaIncludeStatement(PragmaIncludeStatement statement)
     {
-        CompileInclude(statement, statement.Path);
+        CompileInclude(statement, statement.Path.Value as string);
     }
 
     #endregion
@@ -3604,6 +3600,7 @@ public class AdhocScriptCompiler
             CleanupOnExit = shouldCleanupOnExit,
             NumLocals = lastScope.NumLocals,
             StackCounter = lastScope.StackCounter,
+            Parent = lastScope,
         };
 
         Scopes.Add(scope);
@@ -3648,7 +3645,7 @@ public class AdhocScriptCompiler
         var frame = new AdhocCodeFrame(Version);
         Frames.Add(frame);
 
-        var scope = new ScopeContext() { Type = AdhocScopeType.TopLevel };
+        var scope = new ScopeContext() { Type = AdhocScopeType.TopLevel, Parent = CurrentLocalScope };
         Scopes.Add(scope);
         ModuleOrClassScopes.Add(scope);
         DepthPerFrame.AddLast(0);
@@ -3684,6 +3681,7 @@ public class AdhocScriptCompiler
             Type = AdhocScopeType.ModuleOrClass,
             NumLocals = lastScope.NumLocals,
             StackCounter = lastScope.StackCounter,
+            Parent = lastScope,
         };
 
         Scopes.Add(scope);
@@ -3921,7 +3919,7 @@ public class AdhocScriptCompiler
         }
 
         // Check whether the frame was terminated with an explicit return, if not, insert one
-        if (bodyNode is BlockStatement blockStatement && (blockStatement.ChildNodes.Count == 0 || blockStatement.ChildNodes[^1].Type != Nodes.ReturnStatement))
+        if (bodyNode is BlockStatement blockStatement && (blockStatement.Body.Count == 0 || blockStatement.Body[^1].Type != Nodes.ReturnStatement))
         {
             if (CurrentFrame.Version.ShouldReturnVoidForEmptyFunctionReturn())
             {
@@ -4658,7 +4656,7 @@ public class AdhocScriptCompiler
         }
 
         // %s '%s' is already defined as %s at %s:%d.
-        ThrowNameError($"{location?.Source}:{location?.Start.Line ?? 0}: {variableType} '{name.Name}' is already defined as {variable.Type} at {variable.DeclarationSourceFileName}:{variable.DeclarationLineNumber}.");
+        ThrowNameError($"{location?.Source}:{location?.Start.Line ?? 0}: {variableType} '{name.Name}' is already defined as {variable.Type} at {variable.DeclarationSourceFileName}:{variable.IdLocation}.");
     }
 
     private DeclValue? FindVariableFromSymbol(AdhocSymbol path)
@@ -4796,7 +4794,7 @@ public class AdhocScriptCompiler
                     else
                     {
                         // [NameError] "'%s' is already used as a local variable at %s:%d."
-                        ThrowNameError($"{location?.Source}:{location?.Start.Line}: '{fullSymbolPath}' is already used as a local variable at {variable.DeclarationSourceFileName}:{variable.DeclarationLineNumber}.");
+                        ThrowNameError($"{location?.Source}:{location?.Start.Line}: '{fullSymbolPath}' is already used as a local variable at {variable.DeclarationSourceFileName}:{variable.IdLocation}.");
                     }
                 }
                 else // Local path aka local variable
@@ -4827,7 +4825,7 @@ public class AdhocScriptCompiler
                     int stackIndex = -(CurrentFrame.CapturedCallbackVariables.Count + 1);
                     CurrentFrame.CapturedCallbackVariables.Add((stackIndex, fullSymbolPath));
 
-                    var capturedVariable = new Variable(fullSymbolPath, AdhocVariableType.LocalVariable, stackIndex, variable.DeclarationLineNumber, variable.DeclarationSourceFileName);
+                    var capturedVariable = new Variable(fullSymbolPath, AdhocVariableType.LocalVariable, stackIndex, variable.IdLocation, variable.DeclarationSourceFileName);
                     CurrentLocalScope.Variables.TryAdd(fullSymbolPath, capturedVariable);
 
                     return stackIndex;
@@ -4894,7 +4892,7 @@ public class AdhocScriptCompiler
             AssignmentOperator.ModuloAssign => AdhocConstants.OPERATOR_MODULO,
             AssignmentOperator.BitwiseAndAssign => AdhocConstants.OPERATOR_BITWISE_AND,
             AssignmentOperator.BitwiseOrAssign => AdhocConstants.OPERATOR_BITWISE_OR,
-            AssignmentOperator.BitwiseXOrAssign => AdhocConstants.OPERATOR_BITWISE_XOR,
+            AssignmentOperator.BitwiseXorAssign => AdhocConstants.OPERATOR_BITWISE_XOR,
             AssignmentOperator.ExponentiationAssign => AdhocConstants.OPERATOR_POWER,
             AssignmentOperator.RightShiftAssign => AdhocConstants.OPERATOR_RIGHT_SHIFT,
             AssignmentOperator.LeftShiftAssign => AdhocConstants.OPERATOR_LEFT_SHIFT,
@@ -4914,7 +4912,7 @@ public class AdhocScriptCompiler
             case AssignmentOperator.ModuloAssign:
             case AssignmentOperator.BitwiseAndAssign:
             case AssignmentOperator.BitwiseOrAssign:
-            case AssignmentOperator.BitwiseXOrAssign:
+            case AssignmentOperator.BitwiseXorAssign:
             case AssignmentOperator.ExponentiationAssign:
             case AssignmentOperator.RightShiftAssign:
             case AssignmentOperator.LeftShiftAssign:

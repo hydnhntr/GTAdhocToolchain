@@ -177,14 +177,14 @@ public class AdhocProject
 
             var preprocessed = preprocessor.Preprocess(source);
 
-            var errorHandler = new AdhocErrorHandler();
-            var parser = new AdhocAbstractSyntaxTree(preprocessed, new ParserOptions()
+            var errorHandler = new CollectingErrorHandler();
+            var parser = new AdhocAbstractSyntaxTree(new ParserOptions()
             {
                 ErrorHandler = errorHandler
             });
-            var program = parser.ParseScript();
+            var program = parser.ParseScript(preprocessed);
 
-            if (errorHandler.HasErrors())
+            if (errorHandler.Errors.Any())
             {
                 foreach (var error in errorHandler.Errors)
                     Logger.Error($"Syntax error: {error.Description} at {error.Source}:{error.LineNumber}");
@@ -216,11 +216,11 @@ public class AdhocProject
         }
         catch (PreprocessorException preprocessException)
         {
-            Logger.Error($"{preprocessException.FileName}:{preprocessException.Token.Location.Start.Line}: preprocess error: {preprocessException.Message}");
+            Logger.Error($"{preprocessException.FileName}:{preprocessException.Token.LineNumber}: preprocess error: {preprocessException.Message}");
         }
         catch (ParserException parseException)
         {
-            Logger.Error($"Syntax error: {parseException.Description} at {parseException.SourceText}:{parseException.LineNumber}");
+            Logger.Error($"Syntax error: {parseException.Description} at {parseException.SourceLocation}:{parseException.LineNumber}");
         }
         catch (AdhocCompilationException compileException)
         {
@@ -282,8 +282,12 @@ public class AdhocProject
 
                 var preprocessed = preprocessor.Preprocess(source);
 
-                var parser = new AdhocAbstractSyntaxTree(preprocessed);
-                var program = parser.ParseScript();
+                var errs = new CollectingErrorHandler();
+                var parser = new AdhocAbstractSyntaxTree(new ParserOptions()
+                {
+                    ErrorHandler = errs,
+                });
+                var program = parser.ParseScript(preprocessed, srcFile.SourcePath);
 
                 var compiler = new AdhocScriptCompiler(Version);
                 compiler.SetBaseIncludeFolder(BaseIncludeFolder);
@@ -331,11 +335,11 @@ public class AdhocProject
         }
         catch (PreprocessorException preprocessException)
         {
-            Logger.Error($"{preprocessException.FileName}:{preprocessException.Token.Location.Start.Line}: preprocess error: {preprocessException.Message}");
+            Logger.Error($"{preprocessException.FileName}:{preprocessException.Token.LineNumber}: preprocess error: {preprocessException.Message}");
         }
         catch (ParserException parseException)
         {
-            Logger.Error($"Syntax error: {parseException.Description} at {parseException.SourceText}:{parseException.LineNumber}");
+            Logger.Error($"Syntax error: {parseException.Description} at {parseException.SourceLocation}:{parseException.LineNumber}");
         }
         catch (AdhocCompilationException compileException)
         {
