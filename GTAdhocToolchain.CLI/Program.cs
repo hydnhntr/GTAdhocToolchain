@@ -386,7 +386,17 @@ public class Program
 
     private static int ExtractGpb(string inputFile, string? outputPath, bool convertGpbFiles)
     {
-        var gpb = GpbBase.ReadFile(inputFile);
+        GpbBase? gpb;
+        try
+        {
+            gpb = GpbBase.ReadFile(inputFile);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Failed to read gpb {}", inputFile);
+            return -1;
+        }
+
         if (gpb is null)
         {
             _logger.LogError("Could not parse GPB Header.");
