@@ -64,6 +64,18 @@ public abstract class GpbBase
             else
                 path = Path.Combine(file.FileName[1..]);
 
+            // Fix for PCPX-66660 - /projects-tt/ttmode/US/
+            // 
+            // - ClosetRoot.gpb
+            // - PresentRoot.gpb
+            // - ChallengePopup.gpb
+            // - FormEditRoot.gpb
+            // 
+            // Entries path’s reference outside the GPB’s own root (shared assets?).
+            // Strip any leading traversal so extraction stays within the outputFolder.
+            path = string.Join('/', path.Split('/', StringSplitOptions.RemoveEmptyEntries)
+                                         .Where(segment => segment is not ("." or "..")));
+
             string outputFile = Path.Combine(outputFolder, path);
             Directory.CreateDirectory(Path.GetDirectoryName(outputFile));
 
