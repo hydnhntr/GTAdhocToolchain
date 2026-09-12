@@ -37,6 +37,7 @@ public abstract class GpbBase
 
             gpb = magic switch
             {
+                "1bpg" or "gpb1" => new GpbData1(),
                 "2bpg" or "gpb2" => new GpbData2(),
                 "3bpg" or "gpb3" => new GpbData3(),
                 "4bpg" or "gpb4" => new GpbData4(),
@@ -58,7 +59,7 @@ public abstract class GpbBase
             Console.WriteLine($"[:] GPB: Unpack -> {file.FileName}");
 
             string path;
-            if (this is GpbData2)
+            if (this is GpbData1 or GpbData2)
                 path = file.FileName;
             else
                 path = Path.Combine(file.FileName[1..]);
@@ -91,7 +92,7 @@ public abstract class GpbBase
                 texSet.FromStream(ms, TextureSet3.TextureConsoleType.PS3);
                 texSet.ConvertToStandardFormat(Path.ChangeExtension(outputFile, ".png"));
             }
-            else if (convertImages && this is GpbData2 && BinaryPrimitives.ReadUInt32LittleEndian(file.FileData) == TextureSet1.MAGIC) // PS2
+            else if (convertImages && this is GpbData1 or GpbData2 && BinaryPrimitives.ReadUInt32LittleEndian(file.FileData) == TextureSet1.MAGIC) // PS2
             {
                 Console.WriteLine($"[:] GPB: Tex1 to {Path.GetExtension(file.FileName)} -> {file.FileName}");
 
